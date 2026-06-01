@@ -18,6 +18,26 @@ impl fmt::Display for RESP {
     }
 }
 
+fn parse_router(
+    buffer: &[u8],
+    index: &mut usize,
+) -> Option<fn(&[u8], &mut usize) -> RESPResult<RESP>> {
+    match buffer[*index] {
+        b'+' => Some(parse_simple_string),
+        _ => None,
+    }
+}
+
+pub fn bytes_to_resp(buffer: &[u8], index: &mut usize) -> RESPResult<RESP> {
+    match parse_router(buffer, index) {
+        Some(parse_fn) => {
+            let result: RESP = parse_fn(buffer, index)?;
+            Ok(result)
+        }
+        None => Err(RESPError::Unknown),
+    }
+}
+
 // Parse a simple string in the form `+VALUE\r\n`
 fn parse_simple_string(buffer: &[u8], index: &mut usize) -> RESPResult<RESP> {
     resp_remove_type('+', buffer, index)?;
@@ -198,8 +218,31 @@ mod tests {
     fn test_parse_simple_string() {
         let buffer = "+OK\r\n".as_bytes();
         let mut index: usize = 0;
+
         let output = parse_simple_string(buffer, &mut index).unwrap();
+
         assert_eq!(output, RESP::SimpleString(String::from("OK")));
         assert_eq!(index, 5);
+    }
+
+    #[test]
+    fn test_bytes_to_resp_simple_string() {
+        let buffer = "+OK\r\n".as_bytes();
+        let mut index: usize = 0;
+
+        let output = bytes_to_resp(buffer, &mut index).unwrap();
+
+        assert_eq!(output, RESP::SimpleString(String::from("OK")));
+        assert_eq!(index, 5);
+    }
+    #[test]
+    fn test_bytes_to_resp_unknown() {
+        let buffer = "?OK\r\n".as_bytes();
+        let mut index: usize = 0;
+
+        let error = bytes_to_resp(buffer, &mut index).unwrap_err();
+
+        assert_eq!(error, RESPError::Unknown);
+        assert_eq!(index, 0);
     }
 }
