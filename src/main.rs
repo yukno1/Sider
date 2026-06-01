@@ -4,8 +4,10 @@ use tokio::{
 };
 
 mod resp;
+mod server;
 
-use crate::resp::RESP;
+use crate::resp::{RESP, bytes_to_resp};
+use crate::server::process_request;
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
@@ -31,7 +33,23 @@ async fn handle_conn(mut stream: TcpStream) {
         match stream.read(&mut buffer).await {
             Ok(size) if size != 0 => {
                 println!("Received: {:?}", buffer);
-                let response = RESP::SimpleString(String::from("PONG"));
+                let mut index: usize = 0;
+
+                let request = match bytes_to_resp(&buffer[..size].to_vec(), &mut index) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        eprintln!("Error: {}", e);
+                        return;
+                    }
+                };
+
+                let response = match process_request(request) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        eprintln!("Error parsing command: {}", e);
+                        return;
+                    }
+                };
 
                 if let Err(e) = stream.write_all(response.to_string().as_bytes()).await {
                     println!("Error writing to socket: {}", e);
