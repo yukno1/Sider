@@ -1,3 +1,5 @@
+use std::fmt;
+
 pub mod resp_result;
 
 pub use resp_result::{RESPError, RESPResult};
@@ -5,6 +7,15 @@ pub use resp_result::{RESPError, RESPResult};
 #[derive(Debug, PartialEq)]
 pub enum RESP {
     SimpleString(String),
+}
+
+impl fmt::Display for RESP {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let data = match self {
+            Self::SimpleString(data) => format!("+{}\r\n", data),
+        };
+        write!(f, "{}", data)
+    }
 }
 
 // Parse a simple string in the form `+VALUE\r\n`

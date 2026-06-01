@@ -5,6 +5,8 @@ use tokio::{
 
 mod resp;
 
+use crate::resp::RESP;
+
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:6379").await?;
@@ -29,9 +31,9 @@ async fn handle_conn(mut stream: TcpStream) {
         match stream.read(&mut buffer).await {
             Ok(size) if size != 0 => {
                 println!("Received: {:?}", buffer);
-                let response = "+PONG\r\n";
+                let response = RESP::SimpleString(String::from("PONG"));
 
-                if let Err(e) = stream.write_all(response.as_bytes()).await {
+                if let Err(e) = stream.write_all(response.to_string().as_bytes()).await {
                     println!("Error writing to socket: {}", e);
                 }
             }
