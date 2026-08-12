@@ -1,8 +1,8 @@
 use std::fmt;
 
-pub mod resp_result;
+pub mod result;
 
-pub use resp_result::{RESPError, RESPLength, RESPResult};
+pub use result::{RESPError, RESPLength, RESPResult};
 
 #[derive(Debug, PartialEq)]
 pub enum RESP {
