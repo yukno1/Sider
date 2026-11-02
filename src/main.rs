@@ -1,5 +1,6 @@
 mod resp;
 mod server;
+mod set;
 mod storage;
 
 use crate::resp::{RESP, bytes_to_resp};
