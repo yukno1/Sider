@@ -319,4 +319,32 @@ mod tests {
         storage.expire_keys();
         assert_eq!(storage.store.len(), 1);
     }
+
+    #[test]
+    fn test_set_value_with_px() {
+        let mut storage: Storage = Storage::new();
+        let mut avalue = StorageData::from(String::from("avalue"));
+        avalue.add_expiry(Duration::from_millis(100));
+
+        let output = storage
+            .set(
+                String::from("akey"),
+                String::from("avalue"),
+                SetArgs {
+                    expiry: Some(KeyExpiry::PX(100)),
+                    existence: None,
+                    get: false,
+                },
+            )
+            .unwrap();
+
+        assert_eq!(output, String::from("OK"));
+        assert_eq!(storage.store.len(), 1);
+        match storage.store.get(&String::from("akey")) {
+            Some(value) => assert_eq!(value, &avalue),
+            None => panic!(),
+        }
+
+        storage.expiry.get(&String::from("akey")).unwrap();
+    }
 }
