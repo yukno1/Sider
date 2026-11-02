@@ -6,6 +6,7 @@ use crate::resp::{RESP, bytes_to_resp};
 use crate::server::process_request;
 use crate::storage::Storage;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -15,16 +16,28 @@ use tokio::{
 async fn main() -> std::io::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:6379").await?;
 
-    let mut storage = Arc::new(Mutex::new(Storage::new()));
+    let storage = Arc::new(Mutex::new(Storage::new()));
+
+    let mut interval_timer = tokio::time::interval(Duration::from_millis(10));
 
     loop {
-        match listener.accept().await {
-            Ok((stream, _)) => {
-                tokio::spawn(handle_conn(stream, storage.clone()));
+        // now have both the listener and the timer to await
+        tokio::select! {
+            connection =listener.accept()=>{
+                match connection {
+                    Ok((stream, _)) => {
+                        tokio::spawn(handle_conn(stream, storage.clone()));
+                    }
+                    Err(e) => {
+                        eprintln!("error: {}", e);
+                        continue;
+                    }
+                }
             }
-            Err(e) => {
-                eprintln!("error: {}", e);
-                continue;
+
+            _ = interval_timer.tick() => {
+                //  expire_keys is an asynchronous function but its true nature is that of a blocking one.
+                tokio::spawn(expire_keys(storage.clone()));
             }
         }
     }
@@ -69,4 +82,9 @@ async fn handle_conn(mut stream: TcpStream, storage: Arc<Mutex<Storage>>) {
             }
         }
     }
+}
+
+async fn expire_keys(storage: Arc<Mutex<Storage>>) {
+    let mut guard = storage.lock().unwrap();
+    guard.expire_keys();
 }
