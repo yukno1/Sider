@@ -5,14 +5,17 @@ mod server;
 mod set;
 mod storage;
 
+use crate::request::Request;
 use crate::resp::{RESP, bytes_to_resp};
-use crate::server::process_request;
+use crate::server::{ServerMessage, process_request};
 use crate::storage::Storage;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
+    select,
+    sync::mpsc,
 };
 
 #[tokio::main]
@@ -49,39 +52,52 @@ async fn main() -> std::io::Result<()> {
 async fn handle_conn(mut stream: TcpStream, storage: Arc<Mutex<Storage>>) {
     let mut buffer = [0; 512];
 
+    let (connection_sender, _) = mpsc::channel::<ServerMessage>(32);
+
     loop {
-        match stream.read(&mut buffer).await {
-            Ok(size) if size != 0 => {
-                println!("Received: {:?}", buffer);
-                let mut index: usize = 0;
+        // use the select! instead of awaiting directly stream.read.
+        // preparing the handler to host multiple asynchronous actions.
+        select! {
+            result =stream.read(&mut buffer) => {
+                match result {
+                    Ok(size) if size != 0 => {
+                        println!("Received: {:?}", buffer);
+                        let mut index: usize = 0;
 
-                let request = match bytes_to_resp(&buffer[..size].to_vec(), &mut index) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        eprintln!("Error: {}", e);
-                        return;
+                        let resp = match bytes_to_resp(&buffer[..size].to_vec(), &mut index) {
+                            Ok(v) => v,
+                            Err(e) => {
+                                eprintln!("Error: {}", e);
+                                return;
+                            }
+                        };
+
+                        let request = Request {
+                            value: resp,
+                            sender: connection_sender.clone(),
+                        };
+
+                        let response = match process_request(request, storage.clone()) {
+                            Ok(v) => v,
+                            Err(e) => {
+                                eprintln!("Error parsing command: {}", e);
+                                return;
+                            }
+                        };
+
+                        if let Err(e) = stream.write_all(response.to_string().as_bytes()).await {
+                            println!("Error writing to socket: {}", e);
+                        }
                     }
-                };
-
-                let response = match process_request(request, storage.clone()) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        eprintln!("Error parsing command: {}", e);
-                        return;
+                    Ok(_) => {
+                        println!("Connection closed");
+                        break;
                     }
-                };
-
-                if let Err(e) = stream.write_all(response.to_string().as_bytes()).await {
-                    println!("Error writing to socket: {}", e);
+                    Err(e) => {
+                        println!("Error: {}", e);
+                        break;
+                    }
                 }
-            }
-            Ok(_) => {
-                println!("Connection closed");
-                break;
-            }
-            Err(e) => {
-                println!("Error: {}", e);
-                break;
             }
         }
     }
