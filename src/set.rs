@@ -1,4 +1,4 @@
-use crate::storage::result::{StorageError, StorageResult};
+use crate::storage::{StorageError, StorageResult};
 
 // Enums areagoodway torepresent mutually exclusive options like NX and XX
 #[derive(Debug, PartialEq)]

@@ -2,7 +2,10 @@ pub mod result;
 pub use result::{StorageError, StorageResult};
 
 use crate::resp::RESP;
+use crate::set::{KeyExpiry, SetArgs, parse_set_arguments};
+
 use std::collections::HashMap;
+use std::ops::Add;
 use std::time::{Duration, SystemTime};
 
 #[derive(Debug, PartialEq)]
@@ -101,7 +104,11 @@ impl Storage {
             return Err(StorageError::CommandSyntaxError(command.join(" ")));
         }
 
-        let _ = self.set(command[1].clone(), command[2].clone());
+        let key = command[1].clone();
+        let value = command[2].clone();
+        let args = parse_set_arguments(&command[3..].to_vec())?;
+
+        let _ = self.set(key, value, args);
 
         Ok(RESP::SimpleString(String::from("OK")))
     }
@@ -120,13 +127,37 @@ impl Storage {
         }
     }
 
-    fn set(&mut self, key: String, value: String) -> StorageResult<String> {
-        self.store.insert(key, StorageData::from(value));
+    fn set(&mut self, key: String, value: String, args: SetArgs) -> StorageResult<String> {
+        let mut data = StorageData::from(value);
+
+        // EX or PX are transformed into a std::time::Duration and added to the data that is about to
+        // be stored
+        if let Some(value) = args.expiry {
+            let expiry = match value {
+                KeyExpiry::EX(v) => Duration::from_secs(v),
+                KeyExpiry::PX(v) => Duration::from_millis(v),
+            };
+
+            // The expiring key is also added to self.expiry for faster retrieval by self.expire_keys.
+            data.add_expiry(expiry);
+            self.expiry
+                .insert(key.clone(), SystemTime::now().add(expiry));
+        }
+
+        self.store.insert(key.clone(), data);
 
         Ok(String::from("OK"))
     }
 
-    fn get(&self, key: String) -> StorageResult<Option<String>> {
+    fn get(&mut self, key: String) -> StorageResult<Option<String>> {
+        if let Some(&expiry) = self.expiry.get(&key) {
+            if SystemTime::now() >= expiry {
+                self.expiry.remove(&key);
+                self.store.remove(&key);
+                return Ok(None);
+            }
+        }
+
         match self.store.get(&key) {
             Some(StorageData {
                 value: StorageValue::String(v),
@@ -188,7 +219,7 @@ mod tests {
         let avalue = StorageData::from(String::from("avalue"));
 
         let output = storage
-            .set(String::from("akey"), String::from("avalue"))
+            .set(String::from("akey"), String::from("avalue"), SetArgs::new())
             .unwrap();
 
         assert_eq!(output, String::from("OK"));
@@ -231,7 +262,7 @@ mod tests {
 
     #[test]
     fn test_get_value_key_does_not_exist() {
-        let storage: Storage = Storage::new();
+        let mut storage: Storage = Storage::new();
 
         let result = storage.get(String::from("akey")).unwrap();
 
@@ -259,7 +290,7 @@ mod tests {
         let mut storage: Storage = Storage::new();
 
         storage
-            .set(String::from("akey"), String::from("avalue"))
+            .set(String::from("akey"), String::from("avalue"), SetArgs::new())
             .unwrap();
 
         storage.expiry.insert(
@@ -277,7 +308,7 @@ mod tests {
         storage.set_active_expiry(false);
 
         storage
-            .set(String::from("akey"), String::from("avalue"))
+            .set(String::from("akey"), String::from("avalue"), SetArgs::new())
             .unwrap();
 
         storage.expiry.insert(
