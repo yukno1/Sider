@@ -32,6 +32,24 @@ impl fmt::Display for RESP {
     }
 }
 
+impl RESP {
+    pub fn bulk_string(s: impl Into<String>) -> Self {
+        Self::BulkString(s.into())
+    }
+
+    pub fn simple_string(s: impl Into<String>) -> Self {
+        Self::SimpleString(s.into())
+    }
+
+    pub fn bulk_array<I, T>(items: I) -> Self
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<String>,
+    {
+        Self::Array(items.into_iter().map(Self::bulk_string).collect())
+    }
+}
+
 fn parser_router(
     buffer: &[u8],
     index: &mut usize,

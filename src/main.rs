@@ -1,3 +1,4 @@
+mod commands;
 mod connection;
 mod request;
 mod resp;
