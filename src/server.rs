@@ -1,12 +1,9 @@
 mod result;
-pub use result::{ServerError, ServerMessage, ServerResult};
 
-use crate::{
-    RESP,
-    connection::ConnectionMessage,
-    request::Request,
-    storage::{Storage, StorageError, StorageResult},
-};
+pub use result::{ServerError, ServerMessage, ServerValue};
+
+use crate::{RESP, connection::ConnectionMessage, request::Request, storage::Storage};
+use std::time::Duration;
 use tokio::sync::mpsc;
 
 pub struct Server {
@@ -24,9 +21,20 @@ impl Server {
         self.storage = Some(storage);
         self
     }
+
+    pub fn expire_keys(&mut self) {
+        let storage = match self.storage.as_mut() {
+            Some(storage) => storage,
+            None => return,
+        };
+
+        storage.expire_keys();
+    }
 }
 
 pub async fn run_server(mut server: Server, mut crx: mpsc::Receiver<ConnectionMessage>) {
+    let mut interval_timer = tokio::time::interval(Duration::from_millis(10));
+
     loop {
         tokio::select! {
             Some(message) = crx.recv() => {
@@ -36,6 +44,10 @@ pub async fn run_server(mut server: Server, mut crx: mpsc::Receiver<ConnectionMe
                     }
                 }
             }
+
+            _ = interval_timer.tick() => {
+                server.expire_keys();
+            }
         }
     }
 }
@@ -44,8 +56,8 @@ pub async fn process_request(request: Request, server: &mut Server) {
     let elements = match &request.value {
         RESP::Array(v) => v,
         _ => {
-            // return Err(StorageError::IncorrectRequest);
-            panic!()
+            request.error(ServerError::IncorrectData).await;
+            return;
         }
     };
 
@@ -54,29 +66,25 @@ pub async fn process_request(request: Request, server: &mut Server) {
         match elem {
             RESP::BulkString(v) => command.push(v.clone()),
             _ => {
-                // return Err(StorageError::IncorrectRequest);
-                panic!()
+                request.error(ServerError::IncorrectData).await;
+                return;
             }
         }
     }
-    // match command[0].to_lowercase().as_str() {
-    //     "ping" => Ok(RESP::SimpleString(String::from("PONG"))),
-    //     "echo" => Ok(RESP::BulkString(command[1].clone())),
-    //     _ => {
-    //         return Err(ServerError::CommandError);
-    //     }
-    // }
 
     let storage = match server.storage.as_mut() {
         Some(storage) => storage,
-        None => panic!(),
+        None => {
+            request.error(ServerError::StorageNotInitialised).await;
+            return;
+        }
     };
 
     let response = storage.process_command(&command);
 
     match response {
         Ok(v) => {
-            request.sender.send(ServerMessage::Data(v)).await.unwrap();
+            request.data(ServerValue::RESP(v)).await;
         }
         Err(e) => (),
     }
