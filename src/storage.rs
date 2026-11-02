@@ -1,4 +1,5 @@
-pub mod result;
+mod result;
+
 pub use result::{StorageError, StorageResult};
 
 use crate::resp::RESP;
