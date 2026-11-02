@@ -8,10 +8,9 @@ mod storage;
 use crate::connection::ConnectionMessage;
 use crate::request::Request;
 use crate::resp::{RESP, bytes_to_resp};
-use crate::server::{ServerMessage, process_request};
+use crate::server::{Server, ServerMessage, run_server};
 use crate::storage::Storage;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -23,12 +22,12 @@ use tokio::{
 async fn main() -> std::io::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:6379").await?;
 
-    let storage = Arc::new(Mutex::new(Storage::new()));
+    let storage = Storage::new();
+    let mut server = Server::new();
+    server = server.set_storage(storage);
 
-    let mut interval_timer = tokio::time::interval(Duration::from_millis(10));
-
-    let (server_sender, _) = mpsc::channel::<ConnectionMessage>(32);
-
+    let (server_sender, server_receiver) = mpsc::channel::<ConnectionMessage>(32);
+    tokio::spawn(run_server(server, server_receiver));
     loop {
         // now have both the listener and the timer to await
         tokio::select! {
@@ -42,11 +41,6 @@ async fn main() -> std::io::Result<()> {
                         continue;
                     }
                 }
-            }
-
-            _ = interval_timer.tick() => {
-                //  expire_keys is an asynchronous function but its true nature is that of a blocking one.
-                tokio::spawn(expire_keys(storage.clone()));
             }
         }
     }

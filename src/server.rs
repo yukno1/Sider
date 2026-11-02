@@ -7,7 +7,6 @@ use crate::{
     request::Request,
     storage::{Storage, StorageError, StorageResult},
 };
-use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 
 pub struct Server {
@@ -41,7 +40,7 @@ pub async fn run_server(mut server: Server, mut crx: mpsc::Receiver<ConnectionMe
     }
 }
 
-pub async fn process_request(request: Request, server: &mut Server) -> StorageResult<RESP> {
+pub async fn process_request(request: Request, server: &mut Server) {
     let elements = match &request.value {
         RESP::Array(v) => v,
         _ => {
@@ -74,7 +73,13 @@ pub async fn process_request(request: Request, server: &mut Server) -> StorageRe
     };
 
     let response = storage.process_command(&command);
-    response
+
+    match response {
+        Ok(v) => {
+            request.sender.send(ServerMessage::Data(v)).await.unwrap();
+        }
+        Err(e) => (),
+    }
 }
 
 #[cfg(test)]
