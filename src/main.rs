@@ -1,3 +1,5 @@
+mod connection;
+mod request;
 mod resp;
 mod server;
 mod set;

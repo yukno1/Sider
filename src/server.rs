@@ -1,5 +1,5 @@
 mod result;
-pub use result::{ServerError, ServerResult};
+pub use result::{ServerError, ServerMessage, ServerResult};
 
 use crate::RESP;
 use crate::storage::{Storage, StorageError, StorageResult};

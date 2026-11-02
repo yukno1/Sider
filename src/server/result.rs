@@ -1,3 +1,5 @@
+use crate::resp::RESP;
+
 use std::fmt;
 
 #[derive(Debug, PartialEq)]
@@ -14,3 +16,9 @@ impl fmt::Display for ServerError {
 }
 
 pub type ServerResult<T> = Result<T, ServerError>;
+
+#[derive(Debug)]
+pub enum ServerMessage {
+    Data(RESP),
+    Error(ServerError),
+}
