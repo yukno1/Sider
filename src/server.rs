@@ -80,7 +80,28 @@ pub async fn process_request(request: Request, server: &mut Server) -> StorageRe
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::sync::mpsc;
+
+    #[test]
+    fn test_create_new() {
+        let server: Server = Server::new();
+
+        match server.storage {
+            Some(_) => panic!(),
+            None => (),
+        };
+    }
+
+    #[test]
+    fn test_set_storage() {
+        let storage = Storage::new();
+
+        let server: Server = Server::new().set_storage(storage);
+
+        match server.storage {
+            Some(_) => (),
+            None => panic!(),
+        };
+    }
 
     // #[test]
     // fn test_process_request_ping() {
