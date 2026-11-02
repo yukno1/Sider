@@ -5,6 +5,7 @@ mod server;
 mod set;
 mod storage;
 
+use crate::connection::ConnectionMessage;
 use crate::request::Request;
 use crate::resp::{RESP, bytes_to_resp};
 use crate::server::{ServerMessage, process_request};
@@ -26,13 +27,15 @@ async fn main() -> std::io::Result<()> {
 
     let mut interval_timer = tokio::time::interval(Duration::from_millis(10));
 
+    let (server_sender, _) = mpsc::channel::<ConnectionMessage>(32);
+
     loop {
         // now have both the listener and the timer to await
         tokio::select! {
             connection =listener.accept()=>{
                 match connection {
                     Ok((stream, _)) => {
-                        tokio::spawn(handle_conn(stream, storage.clone()));
+                        tokio::spawn(handle_conn(stream, server_sender.clone()));
                     }
                     Err(e) => {
                         eprintln!("error: {}", e);
@@ -49,7 +52,7 @@ async fn main() -> std::io::Result<()> {
     }
 }
 
-async fn handle_conn(mut stream: TcpStream, storage: Arc<Mutex<Storage>>) {
+async fn handle_conn(mut stream: TcpStream, server_sender: mpsc::Sender<ConnectionMessage>) {
     let mut buffer = [0; 512];
 
     let (connection_sender, _) = mpsc::channel::<ServerMessage>(32);
@@ -77,16 +80,12 @@ async fn handle_conn(mut stream: TcpStream, storage: Arc<Mutex<Storage>>) {
                             sender: connection_sender.clone(),
                         };
 
-                        let response = match process_request(request, storage.clone()) {
-                            Ok(v) => v,
+                        match server_sender.send(ConnectionMessage::Request(request)).await {
+                            Ok(()) => {},
                             Err(e) => {
-                                eprintln!("Error parsing command: {}", e);
+                                eprintln!("Error sending request: {}", e);
                                 return;
                             }
-                        };
-
-                        if let Err(e) = stream.write_all(response.to_string().as_bytes()).await {
-                            println!("Error writing to socket: {}", e);
                         }
                     }
                     Ok(_) => {
